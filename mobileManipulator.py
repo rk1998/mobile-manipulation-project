@@ -4,9 +4,10 @@ import gtsam
 import gtsam.utils.plot as gtsam_plot
 from gtsam import Pose2
 import scipy
-from scipy import linalg, matrix
+#from scipy import linalg, matrix
+import numpy as np
 from utils import *
-from sympy import Matrix
+#from sympy import Matrix
 
 
 class FourLinkMM(object):
@@ -37,7 +38,7 @@ class FourLinkMM(object):
         map_3 = Pose2.Expmap(unit_twist_3)
         map_4 = Pose2.Expmap(unit_twist_4)
 
-        end_effector_pose = compose(map_1, map_2, map_3, map_4 tool_at_rest)
+        end_effector_pose = compose(map_1, map_2, map_3, map_4, tool_at_rest)
         return end_effector_pose
 
     def jacobian(self, q):
@@ -87,15 +88,16 @@ class FourLinkMM(object):
         Given a velocity of the base (u) and the Jacobian (J). Compute velocity
         of manipulator thus the end-effector stays in place
         """
-        J_b = Matrix(J[:, 0:3])
-        J_m = Matrix(J[:, 3:])
-        J_mpinv = J_m.pinv()
-        q_d = J_mpinv*(-J_b*u)
-        q_d = Matrix(4,1, q_d)
+        J_b = J[:, 0:3]
+        J_m =  J[:, 3:]
+        J_mpinv = np.linalg.pinv(J_m)
+        q_d = J_mpinv.dot(-J_b.dot(u))
+        q_d = np.reshape(q_d, (4, 1))
+        #q_d = Matrix(4,1, q_d)
         return q_d
 
     def null_space_projector(self, J):
-        I = Matrix.eye(7)
-        J_pinv = J.pinv()
-        N = (I - J_pinv*J)
+        I = np.identity(7)
+        J_pinv = np.linalg.pinv(J)
+        N = (I - J_pinv.dot(J))
         return N
