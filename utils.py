@@ -4,6 +4,7 @@ from gtsam import Pose2
 import numpy as np
 import math
 import random
+from functools import reduce
 # Some utility functions for Pose2
 def vector3(x, y, z):
     """Create 3D double numpy array."""
