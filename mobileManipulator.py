@@ -9,7 +9,6 @@ import numpy as np
 from utils import *
 #from sympy import Matrix
 
-
 class FourLinkMM(object):
 
     def __init__(self):
@@ -27,7 +26,11 @@ class FourLinkMM(object):
         """ Forward kinematics.
             Takes numpy array of joint angles, in radians.
         """
-        tool_at_rest = Pose2(self.x_b + 0, self.y_b + self.L1 + self.L2 + self.L3 + self.L4, np.pi/2)
+        # self.x_b = q[0]
+        # self.y_b = q[1]
+        # self.theta_b = q[2]
+        tool_at_rest = Pose2(self.x_b +  (self.L1 + self.L2 + self.L3 + self.L4)*np.cos(self.theta_b),
+                            self.y_b + (self.L1 + self.L2 + self.L3 + self.L4)*np.sin(self.theta_b), 0)
         unit_twist_1 = vector3(0, 0, q[0])
         unit_twist_2 = vector3(self.L1 * q[1], 0, q[1])
         unit_twist_3 = vector3((self.L1 + self.L2) * q[2], 0, q[2])
@@ -46,8 +49,8 @@ class FourLinkMM(object):
         Calculates manipulator Jacobian. Takes numpy array of joint angles,
         in radians
         """
-        cos_b = np.cos(self.theta_base)
-        sin_b = np.sin(self.theta_base)
+        cos_b = np.cos(self.theta_b)
+        sin_b = np.sin(self.theta_b)
         total = self.L1 + self.L2 + self.L3 + self.L4
         alpha = self.theta_b + q[0]
         beta = self.theta_b + q[0] + q[1]
@@ -72,16 +75,26 @@ class FourLinkMM(object):
             Optional: e: error norm threshold
         """
         q = np.radians(vector4(30, 30, -30, 45))  # take initial estimate well within workspace
+        base_config = generate_random_point_in_circle(sTt_desired, self.L1 + self.L2 + self.L3 + self.L4)
+        # base = np.array([0.0, 0.0, 0.0])
+        # q = np.hstack((base, q))
+        self.x_b = base_config.x()
+        self.y_b = base_config.y()
+        self.theta_b = base_config.theta()
         error = 9999999
+        max_iter = 2000
+        i = 0
         while error >= e:
           jacobian_matrix = self.jacobian(q)
-          sTt_estimate = self.poe(q)
+          manipulator_jacobian = jacobian_matrix[:, 3:]
+          sTt_estimate = self.fwd_kinematics(q)
           error_vector = delta(sTt_estimate, sTt_desired)
           error = np.linalg.norm(error_vector)
-          q = q + np.linalg.pinv(jacobian_matrix).dot(error_vector)
+          q = q + np.linalg.pinv(manipulator_jacobian).dot(error_vector)
+          i = i+1
 
         # return result in interval [-pi,pi)
-        return np.remainder(q+math.pi, 2*math.pi)-math.pi
+        return base_config, np.remainder(q+math.pi, 2*math.pi)-math.pi
 
     def velocity_in_null_space(self, J, u):
         """

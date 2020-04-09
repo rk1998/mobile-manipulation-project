@@ -2,6 +2,8 @@ import gtsam
 import gtsam.utils.plot as gtsam_plot
 from gtsam import Pose2
 import numpy as np
+import math
+import random
 # Some utility functions for Pose2
 def vector3(x, y, z):
     """Create 3D double numpy array."""
@@ -15,6 +17,12 @@ def compose(*poses):
     """Compose all Pose2 transforms given as arguments from left to right."""
     return reduce((lambda x, y: x.compose(y)), poses)
 
+def generate_random_point_in_circle(circle_center, radius):
+    a = random.random() * 2 * np.pi
+    r = radius * math.sqrt(random.random())
+    x = r * np.cos(a) + circle_center.x()
+    y = r * np.sin(a) + circle_center.y()
+    return Pose2(x, y, a)
 
 def vee(M):
     """Pose2 vee operator."""
