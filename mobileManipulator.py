@@ -7,6 +7,11 @@ import scipy
 #from scipy import linalg, matrix
 import numpy as np
 from utils import *
+import matplotlib.patches as mpatches
+import matplotlib.transforms as mtransforms
+import shapely
+from shapely.geometry import Polygon
+from shapely import affinity
 #from sympy import Matrix
 
 class FourLinkMM(object):
@@ -15,12 +20,86 @@ class FourLinkMM(object):
         self.x_b = 0
         self.y_b = 0
         self.theta_b = 0
-
+        self.len_b = 2
+        self.d = np.sqrt(2*self.len_b*self.len_b/4)
         self.L1 = 3.5
         self.L2 = 3.5
         self.L3 = 2.5
         self.L4 = 0.5
 
+        #boxes representing different parts of the mobile manipulator
+        self.base_model = shapely.geometry.box(self.x_b-self.d*np.cos(self.theta_b+np.radians(45)),
+                                               self.y_b-self.d*np.sin(self.theta_b+np.radians(45)),
+                                               self.x_b-self.d*np.cos(self.theta_b+np.radians(45)) + self.len_b,
+                                               self.y_b-self.d*np.sin(self.theta_b+np.radians(45)) + self.len_b)
+        self.arm_model = {}
+        self.arm_model['L1'] = shapely.geometry.box(0, 0, 3.5, 0.1)
+        self.arm_model['L2'] = shapely.geometry.box(self.L1, 0, self.L1 + self.L2, 0.1)
+        self.arm_model['L3'] = shapely.geometry.box(self.L1 + self.L2, 0, self.L1 + self.L2 + self.L3, 0.1)
+        self.arm_model['L4'] = shapely.geometry.box(self.L1 + self.L2 + self.L3, 0, self.L1 + self.L2 + self.L3 + self.L4, 0.1)
+
+
+    def update_manipulator_model(self, new_base_pose, q):
+        """
+        Updates position of model base and arm links.
+        new_base_pose - Pose2 object for the base model
+        q - vector of joint angles
+        """
+        diff_x = new_base_pose.x() - self.x_b
+        diff_y = new_base_pose.y() - self.y_b
+        self.x_b = new_base_pose.x()
+        self.y_b = new_base_pose.y()
+        self.theta_b = new_base_pose.theta()
+        self.base_model = shapely.geometry.box(self.x_b-self.d*np.cos(self.theta_b+np.radians(45)),
+                                               self.y_b-self.d*np.sin(self.theta_b+np.radians(45)),
+                                               self.x_b-self.d*np.cos(self.theta_b+np.radians(45)) + self.len_b,
+                                               self.y_b-self.d*np.sin(self.theta_b+np.radians(45)) + self.len_b)
+        #link1
+        sXl1 = Pose2(0, 0, self.theta_b)
+        l1Zl1 = Pose2(0, 0, q[0])
+        l1Xl2 = Pose2(self.L1, 0, 0)
+        sTl2 = compose(sXl1, l1Zl1, l1Xl2)
+        t1 = sTl2.translation()
+        l1_angle = self.theta_b + q[0]
+        l1_transform = Pose2(diff_x, diff_y, self.theta_b+q[0])
+
+        #link 2
+        l2Zl2 = Pose2(0, 0, q[1])
+        l2Xl3 = Pose2(self.L2, 0, 0)
+        sTl3 = compose(sTl2, l2Zl2, l2Xl3)
+        t2 = sTl3.translation()
+        l2_transform = Pose2(diff_x, diff_y, self.theta_b + q[0] + q[1])
+
+        #link 3
+        l3Zl3 = Pose2(0, 0, q[2])
+        l3X4 = Pose2(self.L3, 0, 0)
+        sTl4 = compose(sTl3, l3Zl3, l3X4)
+        t3 = sTl4.translation()
+        l3_transform = Pose2(diff_x, diff_y, self.theta_b + q[0] + q[1] + q[2])
+
+        #link 4
+        l4Zl4 = Pose2(0, 0, q[3])
+        l4Xt = Pose2(self.L4, 0, 0)
+        sTt = compose(sTl4, l4Zl4, l4Xt)
+        t4 = sTt.translation()
+        l4_transform = Pose2(diff_x, diff_y, self.theta_b + q[0] + q[1] + q[2] + q[3])
+        l1_mat = l1_transform.matrix()
+        l2_mat = l2_transform.matrix()
+        l3_mat = l3_transform.matrix()
+        l4_mat = l4_transform.matrix()
+
+        l1_transform = [l1_mat[0][0], l1_mat[0][1], l1_mat[1][0], l1_mat[1][1],
+                        l1_mat[0][2], l1_mat[1][2]]
+        l2_transform = [l2_mat[0][0], l2_mat[0][1], l2_mat[1][0], l2_mat[1][1],
+                        l2_mat[0][2], l2_mat[1][2]]
+        l3_transform = [l3_mat[0][0], l3_mat[0][1], l3_mat[1][0], l3_mat[1][1],
+                        l3_mat[0][2], l3_mat[1][2]]
+        l4_transform = [l4_mat[0][0], l4_mat[0][1], l4_mat[1][0], l4_mat[1][1],
+                        l4_mat[0][2], l4_mat[1][2]]
+        self.arm_model['L1'] = affinity.affine_transform(self.arm_model['L1'], l1_transform)
+        self.arm_model['L2'] = affinity.affine_transform(self.arm_model['L2'], l2_transform)
+        self.arm_model['L3'] = affinity.affine_transform(self.arm_model['L3'], l3_transform)
+        self.arm_model['L4'] = affinity.affine_transform(self.arm_model['L4'], l4_transform)
 
     def fwd_kinematics(self, q):
         """ Forward kinematics.
@@ -91,11 +170,20 @@ class FourLinkMM(object):
                     [0, 0,1,1,1,1,1]]
         return np.array(Jacobian)
 
-    def ik(self, sTt_desired, e=1e-9):
+    def ik(self, sTt_desired, base_position=None, e=1e-9):
         """ Inverse kinematics.
             Takes desired Pose2 of tool T with respect to base S.
             Optional: e: error norm threshold
         """
+        if base_position is not None:
+            self.x_b = base_position.x()
+            self.y_b = base_position.y()
+            self.theta_b = base_position.z()
+        # radius = self.L1 + self.L2 + self.L3 + self.L4
+        # val = (sTt_desired.x() - self.x_b)**2 + (sTt_desired.y() - self.y_b)**2
+        # print(val)
+        # if  val > radius**2:
+        #     return None
         q = np.radians(vector4(30, 30, -30, 45))  # take initial estimate well within workspace
         #base_config = generate_random_point_in_circle(sTt_desired, self.L1 + self.L2 + self.L3 + self.L4)
         # base = np.array([0.0, 0.0, 0.0])
