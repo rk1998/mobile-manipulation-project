@@ -41,65 +41,79 @@ class FourLinkMM(object):
 
     def update_manipulator_model(self, new_base_pose, q):
         """
-        Updates position of model base and arm links.
-        new_base_pose - Pose2 object for the base model
-        q - vector of joint angles
+        Updates manipulator model with new base pose and given joint angles
+        Important to update model during planning to check for collisions
         """
-        diff_x = new_base_pose.x() - self.x_b
-        diff_y = new_base_pose.y() - self.y_b
         self.x_b = new_base_pose.x()
         self.y_b = new_base_pose.y()
         self.theta_b = new_base_pose.theta()
-        self.base_model = shapely.geometry.box(self.x_b-self.d*np.cos(self.theta_b+np.radians(45)),
-                                               self.y_b-self.d*np.sin(self.theta_b+np.radians(45)),
-                                               self.x_b-self.d*np.cos(self.theta_b+np.radians(45)) + self.len_b,
-                                               self.y_b-self.d*np.sin(self.theta_b+np.radians(45)) + self.len_b)
-        #link1
+        base_model, link_1, link_2, link_3, link_4 = self.create_manipulator_model(new_base_pose, q)
+        self.base_model = base_model
+        self.arm_model['L1'] = Polygon(link_1.get_patch_transform().transform(link_1.get_path().vertices[:-1]))
+        self.arm_model['L2'] = Polygon(link_2.get_patch_transform().transform(link_2.get_path().vertices[:-1]))
+        self.arm_model['L3'] = Polygon(link_3.get_patch_transform().transform(link_3.get_path().vertices[:-1]))
+        self.arm_model['L4'] = Polygon(link_4.get_patch_transform().transform(link_4.get_path().vertices[:-1]))
+
+    def create_manipulator_model(self, new_base_pose, q):
+        """
+        Creates shapley polgons in the given manipulator config.
+        new_base_pose - Pose2 object for the base model
+        q - vector of joint angles
+        """
+
+        # self.x_b = new_base_pose.x()
+        # self.y_b = new_base_pose.y()
+        # self.theta_b = new_base_pose.theta()
+        rect = mpatches.Rectangle([new_base_pose.x()-self.d*np.cos(new_base_pose.theta()+np.radians(45)),
+        new_base_pose.y()-self.d*np.sin(new_base_pose.theta()+np.radians(45))],
+         self.len_b, self.len_b, angle = new_base_pose.theta()*180/np.pi)
+        base_model = Polygon(rect.get_patch_transform().transform(rect.get_path().vertices[:-1]))
+
         sXl1 = Pose2(0, 0, self.theta_b)
         l1Zl1 = Pose2(0, 0, q[0])
         l1Xl2 = Pose2(self.L1, 0, 0)
         sTl2 = compose(sXl1, l1Zl1, l1Xl2)
         t1 = sTl2.translation()
-        l1_angle = self.theta_b + q[0]
-        l1_transform = Pose2(diff_x, diff_y, self.theta_b+q[0])
+        # print(t1)
 
-        #link 2
         l2Zl2 = Pose2(0, 0, q[1])
         l2Xl3 = Pose2(self.L2, 0, 0)
         sTl3 = compose(sTl2, l2Zl2, l2Xl3)
         t2 = sTl3.translation()
-        l2_transform = Pose2(diff_x, diff_y, self.theta_b + q[0] + q[1])
+        # print(t2)
 
-        #link 3
         l3Zl3 = Pose2(0, 0, q[2])
         l3X4 = Pose2(self.L3, 0, 0)
         sTl4 = compose(sTl3, l3Zl3, l3X4)
         t3 = sTl4.translation()
-        l3_transform = Pose2(diff_x, diff_y, self.theta_b + q[0] + q[1] + q[2])
+        # print(t3)
 
-        #link 4
         l4Zl4 = Pose2(0, 0, q[3])
         l4Xt = Pose2(self.L4, 0, 0)
         sTt = compose(sTl4, l4Zl4, l4Xt)
         t4 = sTt.translation()
-        l4_transform = Pose2(diff_x, diff_y, self.theta_b + q[0] + q[1] + q[2] + q[3])
-        l1_mat = l1_transform.matrix()
-        l2_mat = l2_transform.matrix()
-        l3_mat = l3_transform.matrix()
-        l4_mat = l4_transform.matrix()
+        # print(t4)
+        link_1 = mpatches.Rectangle([self.x_b,self.y_b], 3.5, 0.1, angle=(self.theta_b+q[0])*180/np.pi, color='r')
+        link_2 = mpatches.Rectangle([t1.x()+self.x_b,t1.y()+self.y_b], 3.5, 0.1, angle=(self.theta_b+q[0]+q[1])*180/np.pi, color='g')
+        link_3 = mpatches.Rectangle([t2.x() + self.x_b, t2.y() + self.y_b], 2.5, 0.1, angle=(self.theta_b + q[0]+q[1]+q[2])*180/np.pi, color='b')
+        link_4 = mpatches.Rectangle([t3.x()+ self.x_b , t3.y() + self.y_b], 0.5, 0.1, angle=(self.theta_b+q[0]+q[1]+q[2]+q[3])*180/np.pi, color='k')
+        return base_model, link_1, link_2, link_3, link_4
 
-        l1_transform = [l1_mat[0][0], l1_mat[0][1], l1_mat[1][0], l1_mat[1][1],
-                        l1_mat[0][2], l1_mat[1][2]]
-        l2_transform = [l2_mat[0][0], l2_mat[0][1], l2_mat[1][0], l2_mat[1][1],
-                        l2_mat[0][2], l2_mat[1][2]]
-        l3_transform = [l3_mat[0][0], l3_mat[0][1], l3_mat[1][0], l3_mat[1][1],
-                        l3_mat[0][2], l3_mat[1][2]]
-        l4_transform = [l4_mat[0][0], l4_mat[0][1], l4_mat[1][0], l4_mat[1][1],
-                        l4_mat[0][2], l4_mat[1][2]]
-        self.arm_model['L1'] = affinity.affine_transform(self.arm_model['L1'], l1_transform)
-        self.arm_model['L2'] = affinity.affine_transform(self.arm_model['L2'], l2_transform)
-        self.arm_model['L3'] = affinity.affine_transform(self.arm_model['L3'], l3_transform)
-        self.arm_model['L4'] = affinity.affine_transform(self.arm_model['L4'], l4_transform)
+
+    def check_collision_with_obstacles(self, obstacles, new_base_pose, q):
+        """
+        Checks if given base pose and joint config would collide
+        with world obstacles
+        obstacles - list of shapely Polygon objects
+        new_base_pose - Pose2 of the base
+        q - joint angles for the links of the manipulator arm
+        """
+        model = self.create_manipulator_model(new_base_pose, q):
+        for i in range(0, len(model)):
+            for obstacle in obstacles:
+                if model[i].intersects(obstacle):
+                    return True
+        return False
 
     def fwd_kinematics(self, q):
         """ Forward kinematics.
