@@ -7,6 +7,7 @@ import gtsam
 import gtsam.utils.plot as gtsam_plot
 from gtsam import Pose2
 import numpy as np
+import shapely
 from utils import *
 
 base = np.array([0.0, 0.0, 0.0], dtype=np.float)
@@ -59,6 +60,17 @@ class TestMobileManipulator(unittest.TestCase):
         J = self.arm.full_jacobian(Q1)
         np.testing.assert_array_almost_equal(J, expected)
 
+
+    def test_collision_check(self):
+        obstacle_1 = shapely.geometry.box(5, 5, 8, 8)
+        result = self.arm.check_collision_with_obstacles([obstacle_1], Pose2(0.0, 0.0, 0), Q0)
+        self.assertFalse(result)
+
+        obstacle_2 = shapely.geometry.box(3, -1.75, 4, 9)
+        result = self.arm.check_collision_with_obstacles([obstacle_2], Pose2(0.0, 0.0, 0), Q3)
+        self.assertTrue(result)
+        result = self.arm.check_collision_with_obstacles([obstacle_1], Pose2(0.0, 0.0, 0), Q3)
+        self.assertFalse(result)
     #@unittest.skip("Skipping Complete NullSpace")
     def test_velocity_in_nullspace(self):
         """Test Velocity_in_NullSpace."""
