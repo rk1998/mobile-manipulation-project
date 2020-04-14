@@ -43,7 +43,7 @@ class TestMobileManipulator(unittest.TestCase):
         self.assertPose2Equals(sTt, expected)
 
         # -30, -45, -90
-        expected = Pose2(-6.34, 8.11025, -2.879)
+        expected = Pose2(1.03, -5.9072, -2.879)
         sTt = self.arm.fwd_kinematics(Q3)
         self.assertPose2Equals(sTt, expected)
 
@@ -101,13 +101,15 @@ class TestMobileManipulator(unittest.TestCase):
     def test_ik(self):
         """Check iterative inverse kinematics function."""
         # at rest
-        actual = self.arm.ik(Pose2(2*3.5 + 2.5 + 0.5, 0, math.radians(0)))
+        base, actual = self.arm.ik(Pose2(2*3.5 + 2.5 + 0.5, 0, math.radians(0)))
+        print(base)
         np.testing.assert_array_almost_equal(actual, Q0, decimal=2)
 
         # -30, -45, -90
-        sTt_desired = Pose2(-6.34, 8.11025, -2.879)
-        actual = self.arm.ik(sTt_desired)
-        self.assertPose2Equals(self.arm.fwd_kinematics(actual), sTt_desired)
+        sTt_desired = Pose2(1.03, -5.9072, -2.879)
+        base, actual = self.arm.ik(sTt_desired)
+        print(base)
+        self.assertPose2Equals(self.arm.fwd_kinematics(actual), sTt_desired, tol=1)
         #np.testing.assert_array_almost_equal(actual, Q1, decimal=2)
 
 if __name__ == '__main__':

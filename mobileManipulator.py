@@ -26,7 +26,7 @@ class FourLinkMM(object):
         self.L2 = 3.5
         self.L3 = 2.5
         self.L4 = 0.5
-        self.penalty = 10
+        self.penalty = 20
 
         #boxes representing different parts of the mobile manipulator
         self.base_model = shapely.geometry.box(self.x_b-self.d*np.cos(self.theta_b+np.radians(45)),
@@ -122,18 +122,22 @@ class FourLinkMM(object):
                     return True
         return False
 
-    def fwd_kinematics(self, q):
+    def fwd_kinematics(self, q, base_x=None, base_y=None, base_theta=None):
         """ Forward kinematics.
             Takes numpy array of joint angles, in radians.
         """
 
+        if base_x is None and base_y is None and base_theta is None:
+            base_x = self.x_b
+            base_y = self.y_b
+            base_theta = self.theta_b
 
-        jointTransform1 = Pose2(0, 0, q[0] + self.theta_b)
+        jointTransform1 = Pose2(0, 0, q[0] + base_theta)
         jointTransform2 = Pose2(0, 0, q[1])
         jointTransform3 = Pose2(0, 0, q[2])
         jointTransform4 = Pose2(0, 0, q[3])
         jointAngleOffset = Pose2(0, 0, 0)
-        base_offset = Pose2(self.x_b, self.y_b, 0)
+        base_offset = Pose2(base_x, base_y, 0)
         link1pose = Pose2(self.L1, 0, 0)
         link2pose = Pose2(self.L2, 0, 0)
         link3pose = Pose2(self.L3, 0, 0)
@@ -142,19 +146,6 @@ class FourLinkMM(object):
                                     link1pose, jointTransform2,
                                     link2pose, jointTransform3,
                                     link3pose, jointTransform4, link4pose)
-        # tool_at_rest = Pose2(self.x_b + (self.L1 + self.L2 + self.L3 + self.L4)*np.cos(self.theta_b),
-        #                     self.y_b + (self.L1 + self.L2 + self.L3 + self.L4)*np.sin(self.theta_b), 0)
-        # unit_twist_1 = vector3(0, 0, q[0])
-        # unit_twist_2 = vector3(self.L1 * q[1], 0, q[1])
-        # unit_twist_3 = vector3((self.L1 + self.L2) * q[2], 0, q[2])
-        # unit_twist_4 = vector3((self.L1 + self.L2 + self.L3)*q[3], 0, q[3])
-        #
-        # map_1 = Pose2.Expmap(unit_twist_1)
-        # map_2 = Pose2.Expmap(unit_twist_2)
-        # map_3 = Pose2.Expmap(unit_twist_3)
-        # map_4 = Pose2.Expmap(unit_twist_4)
-        #
-        # end_effector_pose = compose(map_1, map_2, map_3, map_4, tool_at_rest)
         return end_effector_pose
 
 
@@ -204,43 +195,47 @@ class FourLinkMM(object):
                     [0, 0,1,1,1,1,1]]
         return np.array(Jacobian)
 
-    def ik(self, sTt_desired, base_position=None, e=1e-5):
+    def ik(self, sTt_desired, base_position=None, e=1e-4):
         """ Inverse kinematics.
             Takes desired Pose2 of tool T with respect to base S.
             Optional: e: error norm threshold
         """
-        if base_position is not None:
-            self.x_b = base_position.x()
-            self.y_b = base_position.y()
-            self.theta_b = base_position.z()
+        base_x = None
+        base_y = None
+        base_theta = None
+        if base_position is None:
+            base_x = self.x_b
+            base_y = self.y_b
+            base_theta = self.theta_b
+        else:
+            base_x = base_position.x()
+            base_y = base_position.y()
+            base_theta = base_position.theta()
         radius = self.L1 + self.L2 + self.L3 + self.L4
-        val = (sTt_desired.x() - self.x_b)**2 + (sTt_desired.y() - self.y_b)**2
-        if  val > (2*radius)**2:
+        val = (sTt_desired.x() - base_x)**2 + (sTt_desired.y() - base_y)**2
+        if  val > (radius)**2:
             print("position is not reachable")
-            return None
-        q = np.radians(vector4(30, 30, -30, 45))  # take initial estimate well within workspace
-        #base_config = generate_random_point_in_circle(sTt_desired, self.L1 + self.L2 + self.L3 + self.L4)
-        # base = np.array([0.0, 0.0, 0.0])
-        # q = np.hstack((base, q))
-        # self.x_b = base_config.x()
-        # self.y_b = base_config.y()
-        # self.theta_b = base_config.theta()
+            random_base_pose = generate_random_point_in_circle(sTt_desired, radius)
+            base_x = random_base_pose.x()
+            base_y = random_base_pose.y()
+            base_theta = random_base_pose.theta()
+        q = np.radians(vector4(30, 30, -30, 45))  # take initial estimate well within workspac
         error = 9999999
-        max_iter = 10000
+        max_iter = 20000
         i = 0
         while error >= e and i < max_iter:
           J = self.manipulator_jacobian(q)
-          sTt_estimate = self.fwd_kinematics(q)
+          sTt_estimate = self.fwd_kinematics(q, base_x = base_x, base_y = base_y, base_theta=base_theta)
           error_vector = delta(sTt_estimate, sTt_desired)
           error = np.linalg.norm(error_vector)
-          q_del = np.linalg.inv(J.T.dot(J)  + self.penalty*np.identity(4)).dot(J.T.dot(error_vector))
+          q_del = np.linalg.inv(J.T.dot(J)  + (self.penalty**2)*np.identity(4)).dot(J.T.dot(error_vector))
           q = q + q_del
           # q = q + np.linalg.pinv(manipulator_jacobian).dot(error_vector)
           i = i+1
 
         print("FINAL ERROR: " + str(error))
         # return result in interval [-pi,pi)
-        return np.remainder(q+math.pi, 2*math.pi)-math.pi
+        return Pose2(base_x, base_y, base_theta), np.remainder(q+math.pi, 2*math.pi)-math.pi
 
     def velocity_in_null_space(self, J, u):
         """
