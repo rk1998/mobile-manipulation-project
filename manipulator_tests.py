@@ -112,5 +112,24 @@ class TestMobileManipulator(unittest.TestCase):
         self.assertPose2Equals(self.arm.fwd_kinematics(actual), sTt_desired, tol=1)
         #np.testing.assert_array_almost_equal(actual, Q1, decimal=2)
 
+    def test_ik2(self):
+        print("testing ik2")
+        base, actual = self.arm.ik2(Pose2(2*3.5 + 2.5 + 0.5, 0, math.radians(0)))
+        print(base)
+        np.testing.assert_array_almost_equal(actual, Q0, decimal=2)
+
+        sTt_desired = Pose2(9,5,-1.5)
+        base, actual = self.arm.ik2(sTt_desired)
+        print(base)
+        print(self.arm.fwd_kinematics(actual, base_pose=base))
+        self.assertPose2Equals(self.arm.fwd_kinematics(actual, base_pose=base), sTt_desired, tol=1)
+
+        sTt_desired = Pose2(20, 8,-3.14)
+        base, actual = self.arm.ik2(sTt_desired)
+        print(base)
+        print(self.arm.fwd_kinematics(actual, base_pose=base))
+        self.assertPose2Equals(self.arm.fwd_kinematics(actual, base_pose=base), sTt_desired, tol=1)
+
+
 if __name__ == '__main__':
   unittest.main(argv=['first-arg-is-ignored'], exit=False)

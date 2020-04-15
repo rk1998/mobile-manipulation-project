@@ -122,15 +122,19 @@ class FourLinkMM(object):
                     return True
         return False
 
-    def fwd_kinematics(self, q, base_x=None, base_y=None, base_theta=None):
+    def fwd_kinematics(self, q, base_pose=None):
         """ Forward kinematics.
             Takes numpy array of joint angles, in radians.
         """
 
-        if base_x is None and base_y is None and base_theta is None:
+        if base_pose is None:
             base_x = self.x_b
             base_y = self.y_b
             base_theta = self.theta_b
+        else:
+            base_x = base_pose.x()
+            base_y = base_pose.y()
+            base_theta = base_pose.theta()
 
         jointTransform1 = Pose2(0, 0, q[0] + base_theta)
         jointTransform2 = Pose2(0, 0, q[1])
@@ -170,18 +174,26 @@ class FourLinkMM(object):
                                 [1, 1, 1, 1]]
         return np.array(manipulator_jacobian)
 
-    def full_jacobian(self, q):
+    def full_jacobian(self, q, base_position=None):
         """
         Calculates manipulator Jacobian. Takes numpy array of joint angles,
         in radians
         """
-        cos_b = np.cos(self.theta_b)
-        sin_b = np.sin(self.theta_b)
+        if base_position is not None:
+            base_x = base_position.x()
+            base_y = base_position.y()
+            base_theta = base_position.theta()
+        else:
+            base_x = self.x_b
+            base_y = self.y_b
+            base_theta = self.theta_b
+        cos_b = np.cos(base_theta)
+        sin_b = np.sin(base_theta)
         total = self.L1 + self.L2 + self.L3 + self.L4
-        alpha = self.theta_b + q[0]
-        beta = self.theta_b + q[0] + q[1]
-        gamma = self.theta_b + q[0] + q[1] + q[2]
-        delta = self.theta_b + q[0] + q[1] + q[2] + q[3]
+        alpha = base_theta + q[0]
+        beta = base_theta + q[0] + q[1]
+        gamma = base_theta + q[0] + q[1] + q[2]
+        delta = base_theta + q[0] + q[1] + q[2] + q[3]
         j_m_1 = -self.L1*np.cos(alpha) - self.L2*np.cos(beta) - self.L3*np.cos(gamma) - self.L4*np.cos(delta)
         j_m_2 = -self.L2*np.cos(beta) - self.L3*np.cos(gamma) - self.L4*np.cos(delta)
         j_m_3 = -self.L3*np.cos(gamma) - self.L4*np.cos(delta)
@@ -194,6 +206,65 @@ class FourLinkMM(object):
                     [0, 1,j_m_5,j_m_5,j_m_6,j_m_7,j_m_8], \
                     [0, 0,1,1,1,1,1]]
         return np.array(Jacobian)
+
+    def ik2(self, sTt_desired, base_position=None, e=1e-5):
+        base_x = None
+        base_y = None
+        base_theta = None
+        if base_position is None:
+            base_x = self.x_b
+            base_y = self.y_b
+            base_theta = self.theta_b
+        else:
+            base_x = base_position.x()
+            base_y = base_position.y()
+            base_theta = base_position.theta()
+        radius = self.L1 + self.L2 + self.L3 + self.L4
+        val = (sTt_desired.x() - base_x)**2 + (sTt_desired.y() - base_y)**2
+        if val > (radius)**2:
+            # random_base_pose = generate_random_point_in_circle(sTt_desired, radius)
+            #initial guess
+            base_x = 1.0
+            base_y = 1.0
+            base_theta = math.radians(90)
+            # base_x = random_base_pose.x()
+            # base_y = random_base_pose.y()
+            # base_theta = random_base_pose.theta()
+            q = np.radians(vector4(30, 30, -30, 45))  # take initial estimate well within workspac
+            error = 9999999
+            max_iter = 20000
+            i = 0
+            while error >= e and i < max_iter:
+                J = self.full_jacobian(q, base_position=Pose2(base_x, base_y, base_theta))
+                sTt_estimate = self.fwd_kinematics(q, base_pose=Pose2(base_x, base_y, base_theta))
+                error_vector = delta(sTt_estimate, sTt_desired)
+                error = np.linalg.norm(error_vector)
+                q_del = np.linalg.inv(J.T.dot(J)  + (self.penalty**2)*np.identity(7)).dot(J.T.dot(error_vector))
+                q = q + q_del[3:]
+                base_x = base_x + q_del[0]
+                base_y = base_y + q_del[1]
+                base_theta = base_theta + q_del[2]
+                i = i + 1
+            print("FINAL ERROR: " + str(error))
+            return Pose2(base_x, base_y, base_theta), np.remainder(q+math.pi, 2*math.pi)-math.pi
+        else:
+            q = np.radians(vector4(30, 30, -30, 45))  # take initial estimate well within workspac
+            error = 9999999
+            max_iter = 20000
+            i = 0
+            while error >= e and i < max_iter:
+              J = self.manipulator_jacobian(q)
+              sTt_estimate = self.fwd_kinematics(q, base_pose=Pose2(base_x, base_y, base_theta))
+              error_vector = delta(sTt_estimate, sTt_desired)
+              error = np.linalg.norm(error_vector)
+              q_del = np.linalg.inv(J.T.dot(J)  + (self.penalty**2)*np.identity(4)).dot(J.T.dot(error_vector))
+              q = q + q_del
+              # q = q + np.linalg.pinv(manipulator_jacobian).dot(error_vector)
+              i = i+1
+
+            print("FINAL ERROR: " + str(error))
+            # return result in interval [-pi,pi)
+            return Pose2(base_x, base_y, base_theta), np.remainder(q+math.pi, 2*math.pi)-math.pi
 
     def ik(self, sTt_desired, base_position=None, e=1e-4):
         """ Inverse kinematics.
@@ -225,7 +296,7 @@ class FourLinkMM(object):
         i = 0
         while error >= e and i < max_iter:
           J = self.manipulator_jacobian(q)
-          sTt_estimate = self.fwd_kinematics(q, base_x = base_x, base_y = base_y, base_theta=base_theta)
+          sTt_estimate = self.fwd_kinematics(q, base_pose=Pose2(base_x, base_y, base_theta))
           error_vector = delta(sTt_estimate, sTt_desired)
           error = np.linalg.norm(error_vector)
           q_del = np.linalg.inv(J.T.dot(J)  + (self.penalty**2)*np.identity(4)).dot(J.T.dot(error_vector))
