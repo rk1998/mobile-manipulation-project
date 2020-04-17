@@ -208,6 +208,11 @@ class FourLinkMM(object):
         return np.array(Jacobian)
 
     def ik2(self, sTt_desired, base_position=None, e=1e-5):
+        """ Inverse kinematics. generates joint angles and base position to
+            get end effector at sTt_desired
+            Takes desired Pose2 of tool T with respect to base S.
+            Optional: e: error norm threshold
+        """
         base_x = None
         base_y = None
         base_theta = None
@@ -266,47 +271,6 @@ class FourLinkMM(object):
             # return result in interval [-pi,pi)
             return Pose2(base_x, base_y, base_theta), np.remainder(q+math.pi, 2*math.pi)-math.pi
 
-    def ik(self, sTt_desired, base_position=None, e=1e-4):
-        """ Inverse kinematics.
-            Takes desired Pose2 of tool T with respect to base S.
-            Optional: e: error norm threshold
-        """
-        base_x = None
-        base_y = None
-        base_theta = None
-        if base_position is None:
-            base_x = self.x_b
-            base_y = self.y_b
-            base_theta = self.theta_b
-        else:
-            base_x = base_position.x()
-            base_y = base_position.y()
-            base_theta = base_position.theta()
-        radius = self.L1 + self.L2 + self.L3 + self.L4
-        val = (sTt_desired.x() - base_x)**2 + (sTt_desired.y() - base_y)**2
-        if  val > (radius)**2:
-            print("position is not reachable")
-            random_base_pose = generate_random_point_in_circle(sTt_desired, radius)
-            base_x = random_base_pose.x()
-            base_y = random_base_pose.y()
-            base_theta = random_base_pose.theta()
-        q = np.radians(vector4(30, 30, -30, 45))  # take initial estimate well within workspac
-        error = 9999999
-        max_iter = 20000
-        i = 0
-        while error >= e and i < max_iter:
-          J = self.manipulator_jacobian(q)
-          sTt_estimate = self.fwd_kinematics(q, base_pose=Pose2(base_x, base_y, base_theta))
-          error_vector = delta(sTt_estimate, sTt_desired)
-          error = np.linalg.norm(error_vector)
-          q_del = np.linalg.inv(J.T.dot(J)  + (self.penalty**2)*np.identity(4)).dot(J.T.dot(error_vector))
-          q = q + q_del
-          # q = q + np.linalg.pinv(manipulator_jacobian).dot(error_vector)
-          i = i+1
-
-        print("FINAL ERROR: " + str(error))
-        # return result in interval [-pi,pi)
-        return Pose2(base_x, base_y, base_theta), np.remainder(q+math.pi, 2*math.pi)-math.pi
 
     def velocity_in_null_space(self, J, u):
         """

@@ -98,20 +98,6 @@ class TestMobileManipulator(unittest.TestCase):
 
 
     #@unittest.skip("Skipping IK")
-    def test_ik(self):
-        """Check iterative inverse kinematics function."""
-        # at rest
-        base, actual = self.arm.ik(Pose2(2*3.5 + 2.5 + 0.5, 0, math.radians(0)))
-        print(base)
-        np.testing.assert_array_almost_equal(actual, Q0, decimal=2)
-
-        # -30, -45, -90
-        sTt_desired = Pose2(1.03, -5.9072, -2.879)
-        base, actual = self.arm.ik(sTt_desired)
-        print(base)
-        self.assertPose2Equals(self.arm.fwd_kinematics(actual), sTt_desired, tol=1)
-        #np.testing.assert_array_almost_equal(actual, Q1, decimal=2)
-
     def test_ik2(self):
         print("testing ik2")
         base, actual = self.arm.ik2(Pose2(2*3.5 + 2.5 + 0.5, 0, math.radians(0)))
