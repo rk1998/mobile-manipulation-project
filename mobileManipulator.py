@@ -27,6 +27,7 @@ class FourLinkMM(object):
         self.L3 = 2.5
         self.L4 = 0.5
         self.penalty = 20
+        self.collision_penalty = 2
 
         #boxes representing different parts of the mobile manipulator
         self.base_model = shapely.geometry.box(self.x_b-self.d*np.cos(self.theta_b+np.radians(45)),
@@ -69,8 +70,11 @@ class FourLinkMM(object):
         new_base_pose.y()-self.d*np.sin(new_base_pose.theta()+np.radians(45))],
          self.len_b, self.len_b, angle = new_base_pose.theta()*180/np.pi)
         base_model = Polygon(rect.get_patch_transform().transform(rect.get_path().vertices[:-1]))
+        x_b = new_base_pose.x()
+        y_b = new_base_pose.y()
+        theta_b = new_base_pose.theta()
 
-        sXl1 = Pose2(0, 0, self.theta_b)
+        sXl1 = Pose2(0, 0, new_base_pose.theta())
         l1Zl1 = Pose2(0, 0, q[0])
         l1Xl2 = Pose2(self.L1, 0, 0)
         sTl2 = compose(sXl1, l1Zl1, l1Xl2)
@@ -94,10 +98,10 @@ class FourLinkMM(object):
         sTt = compose(sTl4, l4Zl4, l4Xt)
         t4 = sTt.translation()
         # print(t4)
-        link_1 = mpatches.Rectangle([self.x_b,self.y_b], 3.5, 0.1, angle=(self.theta_b+q[0])*180/np.pi, color='r')
-        link_2 = mpatches.Rectangle([t1.x()+self.x_b,t1.y()+self.y_b], 3.5, 0.1, angle=(self.theta_b+q[0]+q[1])*180/np.pi, color='g')
-        link_3 = mpatches.Rectangle([t2.x() + self.x_b, t2.y() + self.y_b], 2.5, 0.1, angle=(self.theta_b + q[0]+q[1]+q[2])*180/np.pi, color='b')
-        link_4 = mpatches.Rectangle([t3.x()+ self.x_b , t3.y() + self.y_b], 0.5, 0.1, angle=(self.theta_b+q[0]+q[1]+q[2]+q[3])*180/np.pi, color='k')
+        link_1 = mpatches.Rectangle([x_b, y_b], 3.5, 0.1, angle=(theta_b+q[0])*180/np.pi, color='r')
+        link_2 = mpatches.Rectangle([t1.x()+x_b,t1.y()+y_b], 3.5, 0.1, angle=(theta_b+q[0]+q[1])*180/np.pi, color='g')
+        link_3 = mpatches.Rectangle([t2.x() + x_b,t2.y() + y_b], 2.5, 0.1, angle=(theta_b + q[0]+q[1]+q[2])*180/np.pi, color='b')
+        link_4 = mpatches.Rectangle([t3.x()+ x_b, t3.y() + y_b], 0.5, 0.1, angle=(theta_b+q[0]+q[1]+q[2]+q[3])*180/np.pi, color='k')
         link_1 = Polygon(link_1.get_patch_transform().transform(link_1.get_path().vertices[:-1]))
         link_2 = Polygon(link_2.get_patch_transform().transform(link_2.get_path().vertices[:-1]))
         link_3 = Polygon(link_3.get_patch_transform().transform(link_3.get_path().vertices[:-1]))
@@ -207,10 +211,13 @@ class FourLinkMM(object):
                     [0, 0,1,1,1,1,1]]
         return np.array(Jacobian)
 
-    def ik2(self, sTt_desired, base_position=None, e=1e-5):
+    def ik2(self, sTt_desired, obstacles, base_position=None, e=1e-4):
         """ Inverse kinematics. generates joint angles and base position to
             get end effector at sTt_desired
             Takes desired Pose2 of tool T with respect to base S.
+            sTt_desired - desired end effector pose
+            obstacles - world obstacles, needed for collision checking poses
+            base_position - optional, pose of the base of the manipulator
             Optional: e: error norm threshold
         """
         base_x = None
@@ -229,15 +236,12 @@ class FourLinkMM(object):
         if val > (radius)**2:
             # random_base_pose = generate_random_point_in_circle(sTt_desired, radius)
             #initial guess
-            base_x = 1.0
-            base_y = 1.0
-            base_theta = math.radians(90)
-            # base_x = random_base_pose.x()
-            # base_y = random_base_pose.y()
-            # base_theta = random_base_pose.theta()
+            base_x = np.random.random_sample()*10
+            base_y = np.random.random_sample()*10
+            base_theta = np.random.random_sample()*(2*np.pi) - (np.pi)
             q = np.radians(vector4(30, 30, -30, 45))  # take initial estimate well within workspac
             error = 9999999
-            max_iter = 20000
+            max_iter = 10000
             i = 0
             while error >= e and i < max_iter:
                 J = self.full_jacobian(q, base_position=Pose2(base_x, base_y, base_theta))
@@ -250,12 +254,11 @@ class FourLinkMM(object):
                 base_y = base_y + q_del[1]
                 base_theta = base_theta + q_del[2]
                 i = i + 1
-            print("FINAL ERROR: " + str(error))
             return Pose2(base_x, base_y, base_theta), np.remainder(q+math.pi, 2*math.pi)-math.pi
         else:
             q = np.radians(vector4(30, 30, -30, 45))  # take initial estimate well within workspac
             error = 9999999
-            max_iter = 20000
+            max_iter = 10000
             i = 0
             while error >= e and i < max_iter:
               J = self.manipulator_jacobian(q)
@@ -266,8 +269,6 @@ class FourLinkMM(object):
               q = q + q_del
               # q = q + np.linalg.pinv(manipulator_jacobian).dot(error_vector)
               i = i+1
-
-            print("FINAL ERROR: " + str(error))
             # return result in interval [-pi,pi)
             return Pose2(base_x, base_y, base_theta), np.remainder(q+math.pi, 2*math.pi)-math.pi
 
