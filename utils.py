@@ -5,6 +5,10 @@ import numpy as np
 import math
 import random
 from functools import reduce
+import shapely
+from shapely.geometry import Polygon, Point
+import matplotlib.patches as mpatches
+import matplotlib.transforms as mtransforms
 # Some utility functions for Pose2
 def vector3(x, y, z):
     """Create 3D double numpy array."""
@@ -18,12 +22,29 @@ def compose(*poses):
     """Compose all Pose2 transforms given as arguments from left to right."""
     return reduce((lambda x, y: x.compose(y)), poses)
 
-def generate_random_point_in_circle(circle_center, radius):
-    a = random.random() * 2 * np.pi
-    r = radius * math.sqrt(random.random())
-    x = r * np.cos(a) + circle_center.x()
-    y = r * np.sin(a) + circle_center.y()
-    return Pose2(x, y, a)
+
+def intersect_with_obstacles(pose, obstacles):
+    len_b = 2
+    d = np.sqrt(2*len_b*len_b/4)
+    rect = mpatches.Rectangle([pose.x()-d*np.cos(pose.theta()+np.radians(45)),
+            pose.y()-d*np.sin(pose.theta()+np.radians(45))],len_b, len_b, angle = pose.theta()*180/np.pi)
+    base_model = Polygon(rect.get_patch_transform().transform(rect.get_path().vertices[:-1]))
+    for obstacle in obstacles:
+        if obstacle.intersects(base_model):
+            return True
+    return False
+
+def generate_random_point_in_circle(circle_center, radius, obstacles):
+    intersect = True
+    pose = None
+    while intersect:
+        a = random.random() * 2 * np.pi
+        r = radius * math.sqrt(random.random())
+        x = r * np.cos(a) + circle_center.x()
+        y = r * np.sin(a) + circle_center.y()
+        pose = Pose2(x, y, a)
+        intersect = intersect_with_obstacles(pose, obstacles)
+    return pose
 
 def vee(M):
     """Pose2 vee operator."""

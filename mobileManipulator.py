@@ -27,7 +27,7 @@ class FourLinkMM(object):
         self.L3 = 2.5
         self.L4 = 0.5
         self.penalty = 20
-        self.collision_penalty = 2
+        self.collision_penalty = 20
 
         #boxes representing different parts of the mobile manipulator
         self.base_model = shapely.geometry.box(self.x_b-self.d*np.cos(self.theta_b+np.radians(45)),
@@ -211,6 +211,18 @@ class FourLinkMM(object):
                     [0, 0,1,1,1,1,1]]
         return np.array(Jacobian)
 
+    def generate_base_and_joint_from_path(self, end_effector_path, obstacles):
+        path = []
+        for pose in end_effector_path:
+            collision = True
+            base = Pose(0, 0, 0)
+            q = vector4(0, 0, 0, 0)
+            while collision:
+                base, q = self.ik2(pose, obstacles)
+                collision = self.check_collision_with_obstacles(obstacles, base, q)
+            path.append((base, q))
+        return path
+
     def ik2(self, sTt_desired, obstacles, base_position=None, e=1e-4):
         """ Inverse kinematics. generates joint angles and base position to
             get end effector at sTt_desired
@@ -234,38 +246,58 @@ class FourLinkMM(object):
         radius = self.L1 + self.L2 + self.L3 + self.L4
         val = (sTt_desired.x() - base_x)**2 + (sTt_desired.y() - base_y)**2
         if val > (radius)**2:
-            # random_base_pose = generate_random_point_in_circle(sTt_desired, radius)
+            random_base_pose = generate_random_point_in_circle(sTt_desired, radius, obstacles)
+            base_x = random_base_pose.x()
+            base_y = random_base_pose.y()
+            base_theta = random_base_pose.theta()
             #initial guess
-            base_x = np.random.random_sample()*10
-            base_y = np.random.random_sample()*10
-            base_theta = np.random.random_sample()*(2*np.pi) - (np.pi)
-            q = np.radians(vector4(30, 30, -30, 45))  # take initial estimate well within workspac
+            # base_x = np.random.random_sample()*50
+            # base_y = np.random.random_sample()*50
+            # base_theta = np.random.random_sample()*(2*np.pi) - (np.pi)
+            q0 = np.random.random_sample()*(2*np.pi) - (np.pi)
+            q1 = np.random.random_sample()*(2*np.pi) - (np.pi)
+            q2 = np.random.random_sample()*(2*np.pi) - (np.pi)
+            q3 = np.random.random_sample()*(2*np.pi) - (np.pi)
+            q = vector4(q0, q1, q2, q3)
             error = 9999999
             max_iter = 10000
             i = 0
             while error >= e and i < max_iter:
                 J = self.full_jacobian(q, base_position=Pose2(base_x, base_y, base_theta))
                 sTt_estimate = self.fwd_kinematics(q, base_pose=Pose2(base_x, base_y, base_theta))
+                collision = self.check_collision_with_obstacles(obstacles, Pose2(base_x, base_y, base_theta), q)
+                # q_full = np.hstack((vector3(base_x, base_y, base_theta), q))
+                # q_full = (collision*(self.collision_penalty**2))*q_full
                 error_vector = delta(sTt_estimate, sTt_desired)
                 error = np.linalg.norm(error_vector)
-                q_del = np.linalg.inv(J.T.dot(J)  + (self.penalty**2)*np.identity(7)).dot(J.T.dot(error_vector))
+                q_del = np.linalg.inv(J.T.dot(J)  + (self.penalty**2
+                        + (collision*(self.collision_penalty**2)))*np.identity(7)).dot(J.T.dot(error_vector))
                 q = q + q_del[3:]
                 base_x = base_x + q_del[0]
                 base_y = base_y + q_del[1]
                 base_theta = base_theta + q_del[2]
                 i = i + 1
+            # print("Final ik Error: " + str(error))
             return Pose2(base_x, base_y, base_theta), np.remainder(q+math.pi, 2*math.pi)-math.pi
         else:
-            q = np.radians(vector4(30, 30, -30, 45))  # take initial estimate well within workspac
+            q0 = np.random.random_sample()*(2*np.pi) - (np.pi)
+            q1 = np.random.random_sample()*(2*np.pi) - (np.pi)
+            q2 = np.random.random_sample()*(2*np.pi) - (np.pi)
+            q3 = np.random.random_sample()*(2*np.pi) - (np.pi)
+            q = vector4(q0, q1, q2, q3) # take initial estimate well within workspac
             error = 9999999
             max_iter = 10000
             i = 0
             while error >= e and i < max_iter:
               J = self.manipulator_jacobian(q)
               sTt_estimate = self.fwd_kinematics(q, base_pose=Pose2(base_x, base_y, base_theta))
+              collision = self.check_collision_with_obstacles(obstacles, Pose2(base_x, base_y, base_theta), q)
+              # q_full = q
+              # q_full = (collision*(self.collision_penalty**2))*q_full
               error_vector = delta(sTt_estimate, sTt_desired)
               error = np.linalg.norm(error_vector)
-              q_del = np.linalg.inv(J.T.dot(J)  + (self.penalty**2)*np.identity(4)).dot(J.T.dot(error_vector))
+              q_del = np.linalg.inv(J.T.dot(J)  + (self.penalty**2
+                        + (collision*(self.collision_penalty**2)))*np.identity(4)).dot(J.T.dot(error_vector))
               q = q + q_del
               # q = q + np.linalg.pinv(manipulator_jacobian).dot(error_vector)
               i = i+1

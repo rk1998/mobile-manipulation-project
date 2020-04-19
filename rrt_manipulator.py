@@ -32,8 +32,9 @@ def RandomQ(Qgoal, arm, env):
     end_effector = None
     q = vector4(0, 0, 0, 0)
     if np.random.random_sample() <= 0.15: #15% probability that it returns Qgoal
-        sTt_b, q = arm.ik2(Qgoal, env.obstacles)
-        return sTt_b, q, Qgoal
+        # sTt_b, q = arm.ik2(Qgoal, env.obstacles)
+        # return sTt_b, q, Qgoal
+        return Qgoal
     collision = True
     while collision:
         x = np.random.random_sample()*env.max_x
@@ -41,16 +42,15 @@ def RandomQ(Qgoal, arm, env):
         theta = np.random.random_sample()*360 - 180
         end_effector = Pose2(x, y, math.radians(theta))
         if env.check_collision_with_obstacles(end_effector) == False:
-            sTt_b, q = arm.ik2(end_effector, env.obstacles)
-            collision = arm.check_collision_with_obstacles(env.obstacles, sTt_b, q)
-            if not collision:
-                break
+            break
+            # sTt_b, q = arm.ik2(end_effector, env.obstacles)
+            # collision = arm.check_collision_with_obstacles(env.obstacles, sTt_b, q)
         else:
             print("rand config in collision")
             collision = True
 
-
-    return sTt_b, q, end_effector
+    return end_effector
+    # return sTt_b, q end_effector
 
 class Environment:
     def __init__(self, max_x, max_y, obstacles=None, num_obstacles=5, obstacle_size=4):
@@ -72,22 +72,13 @@ class Environment:
           obstacle = shapely.geometry.box(ob_pos_x, ob_pos_y,
                     ob_pos_x + self.o_size, ob_pos_y + self.o_size)
           obstacles.append(obstacle)
-          # if ob_pos[0] < self.o_size/2 and self.ob_pos[0] > max_x-o_size/2 and ob_pos[1] < o_size/2 and ob_pos[1] > max_y-o_size/2:
-          #   continue
-          # x1 = int(ob_pos[0]-o_size/2)
-          # x2 = int(ob_pos[0]+o_size/2)
-          # y1 = int(ob_pos[1]-o_size/2)
-          # y2 = int(ob_pos[1]+o_size/2)
-          # #print(x1, x2, y1, y2, ob_pos)
-          # c_map[x1:x2, y1:y2] = np.ones((o_size, o_size))
-          # obstacles.append(ob_pos)
           i += 1
         return obstacles
     def check_collision_with_obstacles(self, pose):
 
         point = Point(pose.x(), pose.y())
         for obstacle in self.obstacles:
-            if obstacle.contains(point) or obstacle.exterior.distance(point) <= 5:
+            if obstacle.contains(point) or obstacle.exterior.distance(point) <= 2.5:
                 return True
         return False
 
@@ -97,14 +88,14 @@ class Environment:
         return xc, yc
 
 class Node_manip():
-    def __init__(self, idx, base_pose, Q, end_effector_pose, dictionary, G):
+    def __init__(self, idx, end_effector_pose, dictionary, G):
         self.idx = idx
-        self.q = Q
-        self.base_pose = base_pose
+        # self.q = Q
+        # self.base_pose = base_pose
         self.end_effector_pose = end_effector_pose
         self.neighbors = []
         self.parent = None
-        dictionary[idx] = (self.base_pose, self.q, self.end_effector_pose)
+        dictionary[idx] = self.end_effector_pose
         G.add_node(idx)
 
 class Tree_manip():
@@ -139,15 +130,17 @@ class Tree_manip():
 
         return m1, e1
 
-    def steer(self, Q_curr, end_eff_new, q_new, base_new, step_size, arm, env, distance_limit=2.5):
+    def steer(self, Q_curr, end_eff_new, step_size, arm, env, distance_limit=2.5):
         end_eff_1 = Q_curr.end_effector_pose
-        base_1 = Q_curr.base_pose
+        # base_1 = Q_curr.base_pose
         if env.check_collision_with_obstacles(end_eff_1):
-            return None, None, None
+            # return None, None, None
+            return None
         # q1 = np.asarray(Q_curr)
         # q2 = np.asarray(Q_new) #go in direction of q2
         if np.linalg.norm(delta(end_eff_1, end_eff_new)) < distance_limit:
-            return base_new, q_new, end_eff_new
+            # return base_new, q_new, end_eff_new
+            return end_eff_new
         q_sub = delta(end_eff_1, end_eff_new)
         q_dir = q_sub/np.linalg.norm(q_sub)
         q_dir *= step_size
@@ -155,10 +148,12 @@ class Tree_manip():
         q_new = vector3(end_eff_1.x(), end_eff_1.y(), end_eff_1.theta()) + q_dir
         end_eff_steer = Pose2(q_new[0], q_new[1], q_new[2])
         if env.check_collision_with_obstacles(end_eff_steer) == False:
-            base_pose, q_steer = arm.ik2(end_eff_steer, env.obstacles)
-            return base_pose, q_steer, end_eff_steer
+            # base_pose, q_steer = arm.ik2(end_eff_steer, env.obstacles)
+            # return base_pose, q_steer, end_eff_steer
+            return end_eff_steer
         else:
-            return None, None, None
+            # return None, None, None
+            return None
 
     def link(self, q1, q2, G):
         if q2 not in q1.neighbors:
@@ -181,7 +176,7 @@ def RRT(start_config, Qgoal, env, arm, lim=0.5, step_size=3, num_iters=1000):
     # lim = 0.2 #The robot can stop at a configuration (q1,q2,q3,q4) where q[i] is at most 15 degrees away from Qgoal[i]
     # step_size = 3
     path = []
-    root = Node_manip(0, base, q, Qstart, dictionary, G)
+    root = Node_manip(0, Qstart, dictionary, G)
     path.append((base, q, Qstart))
     graph = Tree_manip(0, root)
 
@@ -192,28 +187,39 @@ def RRT(start_config, Qgoal, env, arm, lim=0.5, step_size=3, num_iters=1000):
 
         if curr_iter % 10 == 0:
             print("ITERATION: " + str(curr_iter))
-        sTt_b_rand, q_rand, end_eff_rand = RandomQ(Qgoal, arm, env)
+        # sTt_b_rand, q_rand, end_eff_rand = RandomQ(Qgoal, arm, env)
+        end_eff_rand = RandomQ(Qgoal, arm, env)
         #print('NEW ITERATION')
 
         nearest_node = graph.find_closest(end_eff_rand)
         #c1 = [nearest_node.t1, nearest_node.t2, nearest_node.t3, nearest_node.t4]
 
-        sTt_b_steer, q_steer, end_eff_steer = graph.steer(nearest_node, end_eff_rand,
-                                                        q_rand, sTt_b_rand, step_size, arm, env,
-                                                        distance_limit=step_size)
-
-        if sTt_b_rand is not None and q_steer is not None and end_eff_steer is not None:
-            add_node = Node_manip(curr_iter, sTt_b_steer, q_steer, end_eff_steer, dictionary, G)
+        # sTt_b_steer, q_steer, end_eff_steer = graph.steer(nearest_node, end_eff_rand,
+        #                                                 q_rand, sTt_b_rand, step_size, arm, env,
+        #                                                 distance_limit=step_size)
+        end_eff_steer = graph.steer(nearest_node, end_eff_rand, step_size, arm, env, distance_limit=step_size)
+        add_node = curr_node
+        if end_eff_steer is not None:
+            add_node = Node_manip(curr_iter, end_eff_steer, dictionary, G)
             graph.link(nearest_node, add_node, G)
             curr_node = add_node
-            curr_iter += 1
-            #print(till_now)
-            # till_now.append(steer_node)
             add = add_node.end_effector_pose
-            #print('add',add,Qgoal)
+            curr_iter +=1
             if np.linalg.norm(delta(add, Qgoal)) <= lim:
                 print('reached goal')
                 break
+        # if sTt_b_rand is not None and q_steer is not None and end_eff_steer is not None:
+        #     add_node = Node_manip(curr_iter, sTt_b_steer, q_steer, end_eff_steer, dictionary, G)
+        #     graph.link(nearest_node, add_node, G)
+        #     curr_node = add_node
+        #     curr_iter += 1
+        #     #print(till_now)
+        #     # till_now.append(steer_node)
+        #     add = add_node.end_effector_pose
+        #     #print('add',add,Qgoal)
+        #     if np.linalg.norm(delta(add, Qgoal)) <= lim:
+        #         print('reached goal')
+        #         break
         else:
             curr_iter += 1
 
@@ -222,6 +228,13 @@ def RRT(start_config, Qgoal, env, arm, lim=0.5, step_size=3, num_iters=1000):
     print('Vertices for shortest path:',v_path)
 
     for p in v_path:
-      path.append(dictionary[p])
+        end_effector = dictionary[p]
+        collision = True
+        sTt_b = None
+        q = None
+        sTt_b, q = arm.ik2(end_effector, env.obstacles)
+        collision = arm.check_collision_with_obstacles(env.obstacles, sTt_b, q)
+        path.append((sTt_b, q, end_effector))
     print('Actual path:',path)
+
     return path, dictionary, G
