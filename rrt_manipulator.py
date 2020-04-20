@@ -46,7 +46,6 @@ def RandomQ(Qgoal, arm, env):
             # sTt_b, q = arm.ik2(end_effector, env.obstacles)
             # collision = arm.check_collision_with_obstacles(env.obstacles, sTt_b, q)
         else:
-            print("rand config in collision")
             collision = True
 
     return end_effector
@@ -182,10 +181,11 @@ def RRT(start_config, Qgoal, env, arm, lim=0.5, step_size=3, num_iters=1000):
 
     till_now = [root]
     curr_node = root
+    converged = False
 
     while curr_iter < num_iters:
 
-        if curr_iter % 10 == 0:
+        if curr_iter % 1000 == 0:
             print("ITERATION: " + str(curr_iter))
         # sTt_b_rand, q_rand, end_eff_rand = RandomQ(Qgoal, arm, env)
         end_eff_rand = RandomQ(Qgoal, arm, env)
@@ -207,6 +207,7 @@ def RRT(start_config, Qgoal, env, arm, lim=0.5, step_size=3, num_iters=1000):
             curr_iter +=1
             if np.linalg.norm(delta(add, Qgoal)) <= lim:
                 print('reached goal')
+                converged = True
                 break
         # if sTt_b_rand is not None and q_steer is not None and end_eff_steer is not None:
         #     add_node = Node_manip(curr_iter, sTt_b_steer, q_steer, end_eff_steer, dictionary, G)
@@ -222,19 +223,37 @@ def RRT(start_config, Qgoal, env, arm, lim=0.5, step_size=3, num_iters=1000):
         #         break
         else:
             curr_iter += 1
-
-    print("Iterations to converge: " + str(curr_iter))
+    if not converged:
+        print("Failed to converge")
+    else:
+        print("Iterations to converge: " + str(curr_iter))
     v_path = nx.algorithms.shortest_path(G, root.idx, add_node.idx)
-    print('Vertices for shortest path:',v_path)
-
+    # print('Vertices for shortest path:',v_path)
+    path_dist = 0
+    prev_pose = None
+    curr_pose = None
     for p in v_path:
         end_effector = dictionary[p]
-        collision = True
-        sTt_b = None
-        q = None
-        sTt_b, q = arm.ik2(end_effector, env.obstacles)
-        collision = arm.check_collision_with_obstacles(env.obstacles, sTt_b, q)
-        path.append((sTt_b, q, end_effector))
-    print('Actual path:',path)
+        prev_pose = curr_pose
+        curr_pose = end_effector
+        if prev_pose is not None:
+            dist = np.linalg.norm(delta(curr_pose, prev_pose))
+            path_dist += dist
+        # collision = True
+        # sTt_b = None
+        # q = None
+        # sTt_b, q = arm.ik2(end_effector, env.obstacles)
+        path.append(end_effector)
+        # collision = arm.check_collision_with_obstacles(env.obstacles, sTt_b, q)
+        # path.append((sTt_b, q, end_effector))
+    # print('Actual path:',path)
+    print('Path Distance: ' + str(path_dist))
 
-    return path, dictionary, G
+    return path, dictionary, G, curr_iter, path_dist, converged
+
+def get_base_and_joint_from_path(path, arm, env):
+    total_path = []
+    for pose in path:
+        sTt_b, q = arm.ik2(pose, env.obstacles)
+        total_path.append((sTt_b, q, end_effector))
+    return total_path
