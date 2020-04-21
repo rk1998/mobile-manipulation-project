@@ -12,7 +12,7 @@ import sklearn
 import networkx as nx
 from matplotlib import pyplot as plt
 import shapely
-from shapely.geometry import Polygon, Point
+from shapely.geometry import Polygon, Point, LineString
 import sys
 from mobileManipulator import FourLinkMM
 import gtsam
